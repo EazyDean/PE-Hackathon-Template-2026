@@ -41,6 +41,7 @@ Smoke test:
 curl http://localhost:5000/health
 curl http://localhost:5000/ready
 curl http://localhost:5000/api/users
+bash scripts/reliability_demo.sh
 ```
 
 ## Monitoring Deployment
@@ -72,6 +73,26 @@ Optional stronger smoke test:
 2. Create a short URL
 3. Open the short URL
 4. Confirm the redirect succeeds and an event is logged
+
+## Reliability Demo Commands
+
+Container restart proof:
+
+```bash
+docker compose kill web
+docker compose ps
+docker inspect -f '{{ .RestartCount }}' "$(docker compose ps -q web)"
+```
+
+Readiness degradation proof:
+
+```bash
+docker compose stop postgres
+curl http://localhost:5000/health
+curl http://localhost:5000/ready
+docker compose start postgres
+curl http://localhost:5000/ready
+```
 
 ## Deployment Assumptions
 

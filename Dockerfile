@@ -8,12 +8,12 @@ WORKDIR /app
 
 RUN pip install --no-cache-dir uv
 
-COPY pyproject.toml README.md ./
+COPY pyproject.toml uv.lock README.md ./
 COPY app ./app
 COPY run.py ./
 COPY .python-version ./
 
-RUN uv sync
+RUN uv sync --frozen
 
 EXPOSE 5000
 

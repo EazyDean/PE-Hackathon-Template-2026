@@ -162,9 +162,7 @@ def _parse_json_body(*, required=True):
         raise APIError(400, "invalid_json", "Request body must contain valid JSON.") from exc
 
     if payload is None:
-        if required:
-            raise APIError(400, "invalid_json", "Request body must be a JSON object.")
-        return {}
+        raise APIError(400, "invalid_json", "Request body must be a JSON object.")
 
     if not isinstance(payload, dict):
         raise APIError(400, "invalid_json", "Request body must be a JSON object.")
@@ -264,6 +262,8 @@ def _parse_positive_int_query(value, field_name):
 
 
 def _get_user_or_404(user_id):
+    if user_id <= 0:
+        raise APIError(400, "validation_error", "'user_id' must be a positive integer.")
     try:
         return User.get_by_id(user_id)
     except DoesNotExist as exc:
@@ -295,6 +295,12 @@ def _get_short_url_or_404(identifier):
         )
 
     raise APIError(404, "not_found", f"Short code '{identifier}' was not found.")
+
+
+def _parse_existing_user_id_query(value, field_name="user_id"):
+    user_id = _parse_positive_int_query(value, field_name)
+    _get_user_or_404(user_id)
+    return user_id
 
 
 def _normalize_delete_reason(value):
@@ -391,7 +397,7 @@ def list_urls():
 
     user_id = request.args.get("user_id")
     if user_id is not None:
-        user_id = _parse_positive_int_query(user_id, "user_id")
+        user_id = _parse_existing_user_id_query(user_id, "user_id")
         query = query.where(ShortUrl.user_id == user_id)
 
     active = request.args.get("active")
@@ -591,7 +597,7 @@ def list_events():
 
     user_id = request.args.get("user_id")
     if user_id is not None:
-        user_id = _parse_positive_int_query(user_id, "user_id")
+        user_id = _parse_existing_user_id_query(user_id, "user_id")
         query = query.where(UrlEvent.user_id == user_id)
 
     event_type = request.args.get("event_type")

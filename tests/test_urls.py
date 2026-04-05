@@ -94,6 +94,13 @@ def test_create_url_rejects_array_json(client):
     assert response.get_json()["error"] == "invalid_json"
 
 
+def test_list_urls_rejects_nonexistent_user_id_query(client):
+    response = client.get("/api/urls?user_id=9999")
+
+    assert response.status_code == 404
+    assert response.get_json()["error"] == "not_found"
+
+
 def test_create_url_rejects_invalid_user(client):
     response = client.post(
         "/api/urls",
@@ -234,6 +241,79 @@ def test_update_rejects_unknown_fields(client, seed_user):
 
     assert response.status_code == 400
     assert response.get_json()["error"] == "validation_error"
+
+
+def test_update_rejects_malformed_json(client, seed_user):
+    create_response = client.post(
+        "/api/urls",
+        json={"user_id": seed_user.id, "original_url": "https://example.com/update-json"},
+    )
+    short_code = create_response.get_json()["short_code"]
+
+    response = client.patch(
+        f"/api/urls/{short_code}",
+        data='{"title": "broken"',
+        content_type="application/json",
+    )
+
+    assert response.status_code == 400
+    assert response.get_json()["error"] == "invalid_json"
+
+
+def test_update_rejects_non_object_json_body(client, seed_user):
+    create_response = client.post(
+        "/api/urls",
+        json={"user_id": seed_user.id, "original_url": "https://example.com/update-array"},
+    )
+    short_code = create_response.get_json()["short_code"]
+
+    response = client.patch(
+        f"/api/urls/{short_code}",
+        data='["not", "an", "object"]',
+        content_type="application/json",
+    )
+
+    assert response.status_code == 400
+    assert response.get_json()["error"] == "invalid_json"
+
+
+def test_update_rejects_nonexistent_url(client):
+    response = client.patch("/api/urls/missing01", json={"title": "Updated"})
+
+    assert response.status_code == 404
+    assert response.get_json()["error"] == "not_found"
+
+
+def test_delete_rejects_null_json_body(client, seed_user):
+    create_response = client.post(
+        "/api/urls",
+        json={"user_id": seed_user.id, "original_url": "https://example.com/delete-null"},
+    )
+    short_code = create_response.get_json()["short_code"]
+
+    response = client.delete(
+        f"/api/urls/{short_code}",
+        data="null",
+        content_type="application/json",
+    )
+
+    assert response.status_code == 400
+    assert response.get_json()["error"] == "invalid_json"
+
+
+def test_delete_rejects_nonexistent_url(client):
+    response = client.delete("/api/urls/missing01", json={"reason": "expired"})
+
+    assert response.status_code == 404
+    assert response.get_json()["error"] == "not_found"
+
+
+def test_method_not_allowed_returns_json_shape(client):
+    response = client.post("/health")
+
+    assert response.status_code == 405
+    assert response.get_json()["error"] == "method_not_allowed"
+    assert "message" in response.get_json()
 
 
 def test_server_error_returns_json_shape(client):

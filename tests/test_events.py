@@ -29,6 +29,20 @@ def test_list_events_rejects_nonexistent_url_id_query(client):
     assert response.get_json()["error"] == "not_found"
 
 
+def test_list_events_rejects_nonexistent_user_id_query(client):
+    response = client.get("/api/events?user_id=9999")
+
+    assert response.status_code == 404
+    assert response.get_json()["error"] == "not_found"
+
+
+def test_list_url_events_rejects_nonexistent_short_code(client):
+    response = client.get("/api/urls/missing01/events")
+
+    assert response.status_code == 404
+    assert response.get_json()["error"] == "not_found"
+
+
 def test_delete_inactive_url_is_idempotent_for_deleted_event_logging(client, seed_user):
     create_response = client.post(
         "/api/urls",

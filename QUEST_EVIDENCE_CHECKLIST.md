@@ -4,11 +4,24 @@ Use this checklist when preparing your submission screenshots, recordings, or li
 
 ## Reliability
 
+### Bronze
+
+- [ ] Screenshot or terminal capture of `GET /health` returning `200`
+- [ ] Screenshot or terminal capture of a graceful JSON `400` response
+- [ ] Test run output showing a passing suite
+
+### Silver
+
 - [ ] Screenshot of failing CI check blocking merge
 - [ ] Screenshot or terminal capture of `docker inspect ... RestartCount`
+- [ ] Screenshot or terminal capture of `docker compose ps` after killing `web`
+
+### Gold
+
 - [ ] Proof that `/health` stays up while `/ready` reflects DB loss
-- [ ] Example JSON 4xx or 5xx error response
-- [ ] Test run output showing passing suite
+- [ ] Screenshot of the GitHub Actions run summary showing coverage
+- [ ] Screenshot or terminal capture showing the 70% coverage gate in CI
+- [ ] Screenshot of [FAILURE_MODES.md](FAILURE_MODES.md) in the repo
 
 ## Scalability
 

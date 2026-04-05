@@ -15,6 +15,14 @@ def test_redirect_logs_visited_event(client, seed_user):
     assert UrlEvent.select().where(UrlEvent.event_type == "visited").count() == 1
 
 
+def test_redirect_unknown_short_code_returns_json_not_found(client):
+    response = client.get("/missing01", follow_redirects=False)
+
+    assert response.status_code == 404
+    assert response.get_json()["error"] == "not_found"
+    assert UrlEvent.select().where(UrlEvent.event_type == "visited").count() == 0
+
+
 def test_inactive_redirect_returns_json_error(client, seed_user):
     create_response = client.post(
         "/api/urls",

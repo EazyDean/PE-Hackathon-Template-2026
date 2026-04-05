@@ -31,6 +31,7 @@ curl http://localhost:5000/health
 curl http://localhost:5000/ready
 curl http://localhost:5000/metrics
 .venv/bin/pytest -q
+bash scripts/reliability_demo.sh
 ```
 
 ### Docker demo stack
@@ -162,3 +163,4 @@ Full request and response details live in [API.md](API.md).
 - Extra operational features live under `/internal/*`, `/metrics`, Docker Compose, and the monitoring overlay.
 - Redis is a cache, not the source of truth. PostgreSQL remains canonical.
 - `/health` and `/ready` intentionally mean different things so liveness and dependency health can be demonstrated separately.
+- CI is configured to fail if tests fail or if coverage drops below 70%.
