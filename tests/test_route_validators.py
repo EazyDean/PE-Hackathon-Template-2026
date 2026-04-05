@@ -23,9 +23,10 @@ def test_validate_original_url_rejects_invalid_values(value):
     assert error.value.code == "validation_error"
 
 
-def test_validate_short_code_rejects_reserved_path():
+@pytest.mark.parametrize("reserved_path", ["health", "ready", "internal", "metrics"])
+def test_validate_short_code_rejects_reserved_path(reserved_path):
     with pytest.raises(APIError) as error:
-        _validate_short_code("health")
+        _validate_short_code(reserved_path)
 
     assert error.value.status_code == 400
     assert error.value.code == "validation_error"

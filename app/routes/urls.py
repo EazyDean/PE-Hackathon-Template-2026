@@ -6,13 +6,17 @@ from urllib.parse import urlparse
 from flask import Blueprint, jsonify, redirect, request
 from peewee import DoesNotExist, IntegrityError
 
+from app.cache import get_cache_stats
+from app.cache import get_url_snapshot as get_cached_url_snapshot
+from app.cache import invalidate_url_snapshot
+from app.cache import write_url_snapshot
 from app.database import db
 from app.models import ShortUrl, UrlEvent, User
 
 TIMESTAMP_FORMAT = "%Y-%m-%d %H:%M:%S"
 SHORT_CODE_PATTERN = re.compile(r"^[A-Za-z0-9]{3,32}$")
 ALLOWED_DELETE_REASONS = {"duplicate", "user_requested", "expired", "policy_cleanup"}
-RESERVED_PATHS = {"api", "events", "health", "urls", "users"}
+RESERVED_PATHS = {"api", "events", "health", "internal", "metrics", "ready", "urls", "users"}
 MAX_SHORT_CODE_INSERT_RETRIES = 8
 
 urls_bp = Blueprint("urls", __name__)
@@ -82,6 +86,33 @@ def serialize_short_url(short_url):
         "is_active": short_url.is_active,
         "created_at": _timestamp(short_url.created_at),
         "updated_at": _timestamp(short_url.updated_at),
+    }
+
+
+def snapshot_short_url(short_url):
+    return {
+        "id": short_url.id,
+        "user_id": short_url.user_id,
+        "short_code": short_url.short_code,
+        "original_url": short_url.original_url,
+        "title": short_url.title,
+        "is_active": short_url.is_active,
+        "created_at": _timestamp(short_url.created_at),
+        "updated_at": _timestamp(short_url.updated_at),
+    }
+
+
+def serialize_short_url_snapshot(snapshot):
+    return {
+        "id": snapshot["id"],
+        "user_id": snapshot["user_id"],
+        "short_code": snapshot["short_code"],
+        "short_url": _short_link(snapshot["short_code"]),
+        "original_url": snapshot["original_url"],
+        "title": snapshot.get("title"),
+        "is_active": snapshot["is_active"],
+        "created_at": snapshot["created_at"],
+        "updated_at": snapshot["updated_at"],
     }
 
 
@@ -297,6 +328,16 @@ def _log_event(short_url, event_type, *, details=None, timestamp=None):
     )
 
 
+def _log_event_for_snapshot(snapshot, event_type, *, details=None, timestamp=None):
+    return UrlEvent.create(
+        url=snapshot["id"],
+        user=snapshot["user_id"],
+        event_type=event_type,
+        timestamp=timestamp or datetime.utcnow(),
+        details=details or {},
+    )
+
+
 def _create_short_url_record(*, user, original_url, title, is_active, short_code=None):
     manual_short_code = short_code is not None
     retries = 1 if manual_short_code else MAX_SHORT_CODE_INSERT_RETRIES
@@ -420,6 +461,7 @@ def create_url():
         is_active=is_active,
         short_code=short_code,
     )
+    write_url_snapshot(snapshot_short_url(short_url))
 
     return jsonify(serialize_short_url(short_url)), 201
 
@@ -427,10 +469,17 @@ def create_url():
 @urls_bp.route("/urls/<string:short_code>", methods=["GET"])
 @urls_bp.route("/api/urls/<string:short_code>", methods=["GET"])
 def get_url(short_code):
-    short_url = _get_short_url_or_404(short_code)
-    payload = serialize_short_url(short_url)
-    payload["event_count"] = short_url.events.count()
-    return jsonify(payload)
+    snapshot, cache_status = get_cached_url_snapshot(short_code)
+    if snapshot is None:
+        short_url = _get_short_url_or_404(short_code)
+        snapshot = snapshot_short_url(short_url)
+        write_url_snapshot(snapshot)
+
+    payload = serialize_short_url_snapshot(snapshot)
+    payload["event_count"] = UrlEvent.select().where(UrlEvent.url_id == snapshot["id"]).count()
+    response = jsonify(payload)
+    response.headers["X-Cache"] = cache_status
+    return response
 
 
 @urls_bp.route("/urls/<string:short_code>", methods=["PATCH"])
@@ -473,6 +522,9 @@ def update_url(short_code):
                 timestamp=now,
             )
 
+    updated_snapshot = snapshot_short_url(short_url)
+    invalidate_url_snapshot(updated_snapshot)
+    write_url_snapshot(updated_snapshot)
     return jsonify(serialize_short_url(short_url))
 
 
@@ -492,6 +544,10 @@ def delete_url(short_code):
             short_url.updated_at = now
             short_url.save()
             _log_event(short_url, "deleted", details={"reason": reason}, timestamp=now)
+
+        deleted_snapshot = snapshot_short_url(short_url)
+        invalidate_url_snapshot(deleted_snapshot)
+        write_url_snapshot(deleted_snapshot)
 
     return jsonify(serialize_short_url(short_url))
 
@@ -533,26 +589,39 @@ def list_events():
     return jsonify({"count": len(items), "items": items})
 
 
+@urls_bp.route("/internal/cache/stats", methods=["GET"])
+@urls_bp.route("/api/internal/cache/stats", methods=["GET"])
+def cache_stats():
+    return jsonify(get_cache_stats())
+
+
 @urls_bp.route("/<string:short_code>", methods=["GET"])
 def resolve_short_code(short_code):
     if short_code in RESERVED_PATHS:
         raise APIError(404, "not_found", "Resource was not found.")
 
-    short_url = _get_short_url_or_404(short_code)
-    if not short_url.is_active:
+    snapshot, cache_status = get_cached_url_snapshot(short_code)
+    if snapshot is None:
+        short_url = _get_short_url_or_404(short_code)
+        snapshot = snapshot_short_url(short_url)
+        write_url_snapshot(snapshot)
+
+    if not snapshot["is_active"]:
         raise APIError(410, "inactive", f"Short code '{short_code}' is inactive.")
 
     now = datetime.utcnow().replace(microsecond=0)
     with db.atomic():
-        _log_event(
-            short_url,
+        _log_event_for_snapshot(
+            snapshot,
             "visited",
             details={
-                "destination": short_url.original_url,
+                "destination": snapshot["original_url"],
                 "referrer": request.referrer,
                 "user_agent": request.headers.get("User-Agent"),
             },
             timestamp=now,
         )
 
-    return redirect(short_url.original_url, code=302)
+    response = redirect(snapshot["original_url"], code=302)
+    response.headers["X-Cache"] = cache_status
+    return response

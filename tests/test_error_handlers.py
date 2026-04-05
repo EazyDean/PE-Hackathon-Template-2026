@@ -1,6 +1,6 @@
 from flask import Flask
 from peewee import DatabaseError, IntegrityError, OperationalError
-from werkzeug.exceptions import MethodNotAllowed, NotFound
+from werkzeug.exceptions import BadRequest, MethodNotAllowed, NotFound
 
 from app.routes import register_routes
 from app.routes.urls import APIError
@@ -34,6 +34,10 @@ def build_error_app():
     @app.get("/raise-not-found")
     def raise_not_found():
         raise NotFound()
+
+    @app.get("/raise-bad-request")
+    def raise_bad_request():
+        raise BadRequest("Bad payload.")
 
     @app.get("/raise-method-not-allowed")
     def raise_method_not_allowed():
@@ -85,9 +89,12 @@ def test_generic_error_handler_returns_json():
 def test_http_error_handlers_return_json():
     client = build_error_app().test_client()
 
+    bad_request = client.get("/raise-bad-request")
     not_found = client.get("/raise-not-found")
     wrong_method = client.get("/raise-method-not-allowed")
 
+    assert bad_request.status_code == 400
+    assert bad_request.get_json()["error"] == "bad_request"
     assert not_found.status_code == 404
     assert not_found.get_json()["error"] == "not_found"
     assert wrong_method.status_code == 405

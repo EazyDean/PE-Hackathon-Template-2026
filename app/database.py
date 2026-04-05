@@ -1,9 +1,11 @@
 import os
 
+from flask import request
 from peewee import DatabaseProxy, Model
 from playhouse.postgres_ext import PostgresqlExtDatabase
 
 db = DatabaseProxy()
+DB_OPTIONAL_ENDPOINTS = {"health", "ready", "metrics"}
 
 
 class BaseModel(Model):
@@ -26,6 +28,8 @@ def init_db(app):
 
     @app.before_request
     def _db_connect():
+        if request.endpoint in DB_OPTIONAL_ENDPOINTS:
+            return
         db.connect(reuse_if_open=True)
 
     @app.teardown_appcontext
@@ -52,3 +56,18 @@ def drop_tables(*, safe=True):
     if db.is_closed():
         db.connect(reuse_if_open=True)
     db.drop_tables(models, safe=safe)
+
+
+def check_database_connection():
+    opened_here = False
+    try:
+        if db.is_closed():
+            db.connect(reuse_if_open=True)
+            opened_here = True
+        db.execute_sql("SELECT 1")
+        return True
+    except Exception:
+        return False
+    finally:
+        if opened_here and not db.is_closed():
+            db.close()

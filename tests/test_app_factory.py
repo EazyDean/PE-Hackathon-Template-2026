@@ -9,9 +9,26 @@ def test_flag_helper_parses_truthy_and_falsy_values():
 
 
 def test_create_app_runs_optional_startup_hooks(monkeypatch):
-    calls = {"init_db": 0, "create_tables": 0, "register_routes": 0, "load_seed_data": 0}
+    calls = {
+        "init_db": 0,
+        "init_cache": 0,
+        "init_observability": 0,
+        "create_tables": 0,
+        "register_routes": 0,
+        "load_seed_data": 0,
+    }
 
     monkeypatch.setattr(app_module, "init_db", lambda app: calls.__setitem__("init_db", calls["init_db"] + 1))
+    monkeypatch.setattr(
+        app_module,
+        "init_cache",
+        lambda app: calls.__setitem__("init_cache", calls["init_cache"] + 1),
+    )
+    monkeypatch.setattr(
+        app_module,
+        "init_observability",
+        lambda app: calls.__setitem__("init_observability", calls["init_observability"] + 1),
+    )
     monkeypatch.setattr(
         app_module,
         "create_tables",
@@ -43,6 +60,8 @@ def test_create_app_runs_optional_startup_hooks(monkeypatch):
 
     assert calls == {
         "init_db": 1,
+        "init_cache": 1,
+        "init_observability": 1,
         "create_tables": 1,
         "register_routes": 1,
         "load_seed_data": 1,

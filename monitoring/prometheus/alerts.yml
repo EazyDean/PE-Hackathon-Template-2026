@@ -1,0 +1,26 @@
+groups:
+  - name: url-shortener-alerts
+    rules:
+      - alert: ShortenerInstanceDown
+        expr: up{job="url-shortener-app"} == 0
+        for: 30s
+        labels:
+          severity: critical
+          service: url-shortener
+        annotations:
+          summary: URL shortener instance is down
+          description: Prometheus cannot scrape {{ $labels.instance }} for at least 30 seconds.
+
+      - alert: ShortenerHighErrorRate
+        expr: |
+          sum(rate(shortener_http_errors_total{status_code=~"5.."}[5m]))
+          /
+          clamp_min(sum(rate(shortener_http_requests_total[5m])), 1)
+          > 0.05
+        for: 1m
+        labels:
+          severity: warning
+          service: url-shortener
+        annotations:
+          summary: URL shortener is serving too many 5xx responses
+          description: The 5xx error rate has stayed above 5% for the last minute.

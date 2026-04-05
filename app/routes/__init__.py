@@ -1,7 +1,7 @@
 import logging
 
 from peewee import DatabaseError, IntegrityError, OperationalError
-from werkzeug.exceptions import HTTPException
+from werkzeug.exceptions import BadRequest, HTTPException, MethodNotAllowed, NotFound
 
 from app.routes.urls import APIError, json_error, urls_bp
 
@@ -14,6 +14,18 @@ def register_routes(app):
     @app.errorhandler(APIError)
     def _handle_api_error(error):
         return json_error(error.status_code, error.code, error.message, error.details)
+
+    @app.errorhandler(BadRequest)
+    def _handle_bad_request(error):
+        return json_error(400, "bad_request", str(error.description))
+
+    @app.errorhandler(NotFound)
+    def _handle_not_found(error):
+        return json_error(404, "not_found", "Resource was not found.")
+
+    @app.errorhandler(MethodNotAllowed)
+    def _handle_method_not_allowed(error):
+        return json_error(405, "method_not_allowed", "Method is not allowed for this endpoint.")
 
     @app.errorhandler(IntegrityError)
     def _handle_integrity_error(error):
@@ -31,10 +43,8 @@ def register_routes(app):
 
     @app.errorhandler(HTTPException)
     def _handle_http_exception(error):
-        if error.code == 404:
-            return json_error(404, "not_found", "Resource was not found.")
-        if error.code == 405:
-            return json_error(405, "method_not_allowed", "Method is not allowed for this endpoint.")
+        if error.code == 400:
+            return json_error(400, "bad_request", str(error.description))
         if error.code == 415:
             return json_error(400, "invalid_json", "Request body must contain valid JSON.")
         return json_error(error.code or 500, "http_error", str(error.description))
