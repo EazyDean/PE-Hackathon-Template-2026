@@ -1,0 +1,93 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    name: tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_HOST: 127.0.0.1
+      DATABASE_PORT: "5432"
+      DATABASE_USER: postgres
+      DATABASE_PASSWORD: postgres
+      TEST_DATABASE_NAME: hackathon_test_db
+      TEST_DATABASE_ADMIN: postgres
+      FLASK_DEBUG: "false"
+      AUTO_CREATE_TABLES: "false"
+      AUTO_LOAD_SEED_DATA: "false"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version-file: .python-version
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Lightweight syntax check
+        run: uv run python -m compileall app tests run.py
+
+      - name: Run pytest with coverage
+        run: uv run pytest -q
+
+      - name: Add coverage summary
+        if: always() && hashFiles('coverage.xml') != ''
+        run: |
+          python - <<'PY'
+          import os
+          import xml.etree.ElementTree as ET
+
+          root = ET.parse("coverage.xml").getroot()
+          line_rate = float(root.attrib.get("line-rate", "0"))
+          branch_rate = float(root.attrib.get("branch-rate", "0"))
+
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+              summary.write("## Coverage\n\n")
+              summary.write(f"- Line coverage: {line_rate * 100:.1f}%\n")
+              summary.write(f"- Branch coverage: {branch_rate * 100:.1f}%\n")
+              summary.write("\nCoverage details are also printed in the pytest step logs.\n")
+          PY
+
+      - name: Upload coverage artifact
+        if: always() && hashFiles('coverage.xml') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-xml
+          path: coverage.xml
