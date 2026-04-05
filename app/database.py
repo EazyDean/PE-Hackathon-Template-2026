@@ -1,6 +1,7 @@
 import os
 
-from peewee import DatabaseProxy, Model, PostgresqlDatabase
+from peewee import DatabaseProxy, Model
+from playhouse.postgres_ext import PostgresqlExtDatabase
 
 db = DatabaseProxy()
 
@@ -11,12 +12,15 @@ class BaseModel(Model):
 
 
 def init_db(app):
-    database = PostgresqlDatabase(
-        os.environ.get("DATABASE_NAME", "hackathon_db"),
-        host=os.environ.get("DATABASE_HOST", "localhost"),
-        port=int(os.environ.get("DATABASE_PORT", 5432)),
-        user=os.environ.get("DATABASE_USER", "postgres"),
-        password=os.environ.get("DATABASE_PASSWORD", "postgres"),
+    database = PostgresqlExtDatabase(
+        app.config.get("DATABASE_NAME", os.environ.get("DATABASE_NAME", "hackathon_db")),
+        host=app.config.get("DATABASE_HOST", os.environ.get("DATABASE_HOST", "localhost")),
+        port=int(app.config.get("DATABASE_PORT", os.environ.get("DATABASE_PORT", 5432))),
+        user=app.config.get("DATABASE_USER", os.environ.get("DATABASE_USER", "postgres")),
+        password=app.config.get(
+            "DATABASE_PASSWORD",
+            os.environ.get("DATABASE_PASSWORD", "postgres"),
+        ),
     )
     db.initialize(database)
 
@@ -28,3 +32,23 @@ def init_db(app):
     def _db_close(exc):
         if not db.is_closed():
             db.close()
+
+
+def get_models():
+    from app.models import ALL_MODELS
+
+    return ALL_MODELS
+
+
+def create_tables(*, safe=True):
+    models = get_models()
+    if db.is_closed():
+        db.connect(reuse_if_open=True)
+    db.create_tables(models, safe=safe)
+
+
+def drop_tables(*, safe=True):
+    models = list(reversed(get_models()))
+    if db.is_closed():
+        db.connect(reuse_if_open=True)
+    db.drop_tables(models, safe=safe)
