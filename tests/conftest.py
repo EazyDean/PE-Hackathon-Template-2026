@@ -55,15 +55,15 @@ def app():
             "AUTO_LOAD_SEED_DATA": False,
         }
     )
+
+    @app.get("/_test/error")
+    def _test_error():
+        raise RuntimeError("boom")
+
     return app
 
 
 @pytest.fixture()
-def client(app):
-    return app.test_client()
-
-
-@pytest.fixture(autouse=True)
 def clean_database(app):
     drop_tables(safe=True)
     create_tables(safe=True)
@@ -73,5 +73,10 @@ def clean_database(app):
 
 
 @pytest.fixture()
-def seed_user():
+def client(app, clean_database):
+    return app.test_client()
+
+
+@pytest.fixture()
+def seed_user(clean_database):
     return User.create(username="test-user", email="test-user@example.com")
