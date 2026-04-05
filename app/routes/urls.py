@@ -369,7 +369,7 @@ def _create_short_url_record(*, user, original_url, title, is_active, short_code
                 )
                 return short_url
         except IntegrityError as exc:
-            if _is_unique_violation(exc, "short_code"):
+            if _db_error_code(exc) == "23505":
                 if manual_short_code:
                     raise APIError(409, "conflict", f"Short code '{candidate}' already exists.") from exc
                 continue

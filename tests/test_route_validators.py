@@ -1,6 +1,11 @@
+from contextlib import nullcontext
+from types import SimpleNamespace
+
 import pytest
+from peewee import IntegrityError
 
 from app.routes.urls import APIError
+from app.routes.urls import _create_short_url_record
 from app.routes.urls import _normalize_delete_reason
 from app.routes.urls import _parse_positive_int_query
 from app.routes.urls import _reject_unknown_fields
@@ -74,3 +79,38 @@ def test_reject_unknown_fields_reports_field_list():
 
     assert error.value.status_code == 400
     assert error.value.details == {"fields": ["extra"]}
+
+
+def test_create_short_url_record_retries_generated_code_on_unique_violation(monkeypatch):
+    fake_user = SimpleNamespace(id=1)
+    created = []
+
+    class FakeDatabaseCause(Exception):
+        def __init__(self, pgcode):
+            super().__init__(pgcode)
+            self.pgcode = pgcode
+
+    def fake_create(**kwargs):
+        if not created:
+            error = IntegrityError("duplicate")
+            error.__cause__ = FakeDatabaseCause("23505")
+            created.append("collision")
+            raise error
+        return SimpleNamespace(user=fake_user, short_code=kwargs["short_code"])
+
+    monkeypatch.setattr("app.routes.urls.db", SimpleNamespace(atomic=lambda: nullcontext()))
+    monkeypatch.setattr("app.routes.urls.ShortUrl.create", fake_create)
+    monkeypatch.setattr("app.routes.urls._log_event", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        "app.routes.urls._generate_short_code",
+        lambda length=6: "Retry1" if len(created) == 0 else "Retry2",
+    )
+
+    short_url = _create_short_url_record(
+        user=fake_user,
+        original_url="https://example.com/retry",
+        title=None,
+        is_active=True,
+    )
+
+    assert short_url.short_code == "Retry2"
