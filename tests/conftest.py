@@ -51,6 +51,7 @@ def app():
         {
             "TESTING": True,
             "DATABASE_NAME": database_name,
+            "CACHE_ENABLED": False,
             "AUTO_CREATE_TABLES": False,
             "AUTO_LOAD_SEED_DATA": False,
         }

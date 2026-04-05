@@ -49,7 +49,12 @@ def _is_unique_violation(error, field_hint=None):
     if _db_error_code(error) == "23505":
         if field_hint is None:
             return True
-        return field_hint in _db_error_text(error)
+        error_text = _db_error_text(error)
+        return (
+            field_hint in error_text
+            or "duplicate key" in error_text
+            or "unique constraint" in error_text
+        )
     return False
 
 
@@ -444,7 +449,7 @@ def create_url():
     payload = _parse_json_body()
     _reject_unknown_fields(payload, {"is_active", "original_url", "short_code", "title", "user_id"})
 
-    user = _get_user_or_404(_require_positive_int(payload, "user_id"))
+    user_id = _require_positive_int(payload, "user_id")
     original_url = _validate_original_url(_require_string(payload, "original_url"))
     title = _optional_string(payload, "title", allow_null=True, blank_to_none=True)
     is_active = _optional_bool(payload, "is_active", default=True)
@@ -453,6 +458,8 @@ def create_url():
         short_code = _validate_short_code(_require_string(payload, "short_code"))
     else:
         short_code = None
+
+    user = _get_user_or_404(user_id)
 
     short_url = _create_short_url_record(
         user=user,
