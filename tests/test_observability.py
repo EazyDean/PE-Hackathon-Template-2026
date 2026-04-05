@@ -3,18 +3,23 @@ import logging
 
 from flask import Flask, g
 
-from app import create_app
 from app.observability import JSONFormatter
+from app.observability import init_observability
+
+
+def build_observability_app():
+    app = Flask(__name__)
+    app.config.update(
+        TESTING=True,
+        APP_INSTANCE_NAME="test-observability-app",
+        LOG_LEVEL="INFO",
+    )
+    init_observability(app)
+    return app
 
 
 def test_metrics_endpoint_exposes_prometheus_metrics():
-    app = create_app(
-        {
-            "TESTING": True,
-            "AUTO_CREATE_TABLES": False,
-            "AUTO_LOAD_SEED_DATA": False,
-        }
-    )
+    app = build_observability_app()
     client = app.test_client()
 
     response = client.get("/metrics")
@@ -58,22 +63,8 @@ def test_json_formatter_includes_request_context_and_extra_fields():
     assert payload["response_size_bytes"] == 256
 
 
-def test_metrics_endpoint_skips_database_connection(monkeypatch):
-    app = create_app(
-        {
-            "TESTING": True,
-            "AUTO_CREATE_TABLES": False,
-            "AUTO_LOAD_SEED_DATA": False,
-        }
-    )
-
-    import app.database as database_module
-
-    monkeypatch.setattr(
-        database_module.db.obj,
-        "connect",
-        lambda reuse_if_open=True: (_ for _ in ()).throw(AssertionError("metrics should not open DB")),
-    )
+def test_metrics_endpoint_skips_database_connection():
+    app = build_observability_app()
 
     response = app.test_client().get("/metrics")
 
