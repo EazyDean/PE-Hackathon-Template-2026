@@ -349,6 +349,12 @@ def _create_short_url_record(*, user, original_url, title, is_active, short_code
 
     for _ in range(retries):
         candidate = short_code or _generate_short_code()
+        short_code_exists = ShortUrl.select().where(ShortUrl.short_code == candidate).exists()
+        if short_code_exists:
+            if manual_short_code:
+                raise APIError(409, "conflict", f"Short code '{candidate}' already exists.")
+            continue
+
         now = datetime.utcnow().replace(microsecond=0)
         try:
             with db.atomic():
@@ -369,7 +375,7 @@ def _create_short_url_record(*, user, original_url, title, is_active, short_code
                 )
                 return short_url
         except IntegrityError as exc:
-            if _db_error_code(exc) == "23505":
+            if _is_unique_violation(exc):
                 if manual_short_code:
                     raise APIError(409, "conflict", f"Short code '{candidate}' already exists.") from exc
                 continue

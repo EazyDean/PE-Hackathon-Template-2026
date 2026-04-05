@@ -90,6 +90,18 @@ def test_create_short_url_record_retries_generated_code_on_unique_violation(monk
             super().__init__(pgcode)
             self.pgcode = pgcode
 
+    class FakeShortCodeField:
+        def __eq__(self, other):
+            return other
+
+    class FakeSelectQuery:
+        def where(self, candidate):
+            self.candidate = candidate
+            return self
+
+        def exists(self):
+            return False
+
     def fake_create(**kwargs):
         if not created:
             error = IntegrityError("duplicate")
@@ -98,8 +110,14 @@ def test_create_short_url_record_retries_generated_code_on_unique_violation(monk
             raise error
         return SimpleNamespace(user=fake_user, short_code=kwargs["short_code"])
 
+    fake_short_url_model = SimpleNamespace(
+        short_code=FakeShortCodeField(),
+        select=lambda: FakeSelectQuery(),
+        create=fake_create,
+    )
+
     monkeypatch.setattr("app.routes.urls.db", SimpleNamespace(atomic=lambda: nullcontext()))
-    monkeypatch.setattr("app.routes.urls.ShortUrl.create", fake_create)
+    monkeypatch.setattr("app.routes.urls.ShortUrl", fake_short_url_model)
     monkeypatch.setattr("app.routes.urls._log_event", lambda *args, **kwargs: None)
     monkeypatch.setattr(
         "app.routes.urls._generate_short_code",
@@ -114,3 +132,53 @@ def test_create_short_url_record_retries_generated_code_on_unique_violation(monk
     )
 
     assert short_url.short_code == "Retry2"
+
+
+def test_create_short_url_record_skips_existing_generated_code_before_insert(monkeypatch):
+    fake_user = SimpleNamespace(id=1)
+    created_codes = []
+
+    class FakeShortCodeField:
+        def __eq__(self, other):
+            return other
+
+    class FakeSelectQuery:
+        def __init__(self):
+            self.candidate = None
+
+        def where(self, candidate):
+            self.candidate = candidate
+            return self
+
+        def exists(self):
+            return self.candidate == "Retry1"
+
+    def fake_create(**kwargs):
+        created_codes.append(kwargs["short_code"])
+        return SimpleNamespace(user=fake_user, short_code=kwargs["short_code"])
+
+    fake_short_url_model = SimpleNamespace(
+        short_code=FakeShortCodeField(),
+        select=lambda: FakeSelectQuery(),
+        create=fake_create,
+    )
+
+    generated_codes = iter(["Retry1", "Retry2"])
+
+    monkeypatch.setattr("app.routes.urls.db", SimpleNamespace(atomic=lambda: nullcontext()))
+    monkeypatch.setattr("app.routes.urls.ShortUrl", fake_short_url_model)
+    monkeypatch.setattr("app.routes.urls._log_event", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        "app.routes.urls._generate_short_code",
+        lambda length=6: next(generated_codes),
+    )
+
+    short_url = _create_short_url_record(
+        user=fake_user,
+        original_url="https://example.com/retry",
+        title=None,
+        is_active=True,
+    )
+
+    assert short_url.short_code == "Retry2"
+    assert created_codes == ["Retry2"]
